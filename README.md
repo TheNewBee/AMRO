@@ -27,6 +27,8 @@ JSON rows contain `clientInformation`, `productInformation`, and `totalTransacti
 
 Prerequisites: Java 21+, Maven, Node.js/npm with the Angular CLI, and an externally reachable Kafka cluster. Build the backend and frontend using their project instructions, then run the backend from its Spring Boot Maven project and the frontend with its Angular development server. Configure local paths to the checked-in `Input.txt` and a writable `Output.csv`, and configure Kafka bootstrap/topic properties for the local cluster. The runtime defaults are `/data/Input.txt` and `/data/Output.csv`.
 
+For local Angular development, `npm --prefix frontend start` loads `frontend/proxy.conf.json`; relative `/api` requests are proxied from `localhost:4200` to the backend at `localhost:8080`. Start the backend on port 8080, or change the proxy target for another local endpoint.
+
 The independent expected fixture is [`sample/Output.csv`](sample/Output.csv); it is not runtime state.
 
 ## Docker
@@ -61,4 +63,4 @@ kubectl apply -f k8s/
 kubectl -n amn-amro get pods,svc,pvc
 ```
 
-The manifests create a persistent volume claim mounted at `/data`, one backend replica, frontend/backend Services, ConfigMap-backed runtime file paths, external Kafka bootstrap/topic configuration, and Spring Boot actuator startup, liveness, and readiness probes. Apply them in the namespace used for the deployment; the frontend proxy expects the backend Service name `amn-amro-backend` in that same namespace. Default Kafka settings are bootstrap `kafka.company.internal:9092`, transaction topic `amn-amro-transactions`, and dead-letter topic `amn-amro-transactions-dead-letter`; override them in the ConfigMap for the external cluster. No Kafka broker or controller is bundled.
+The manifests create a persistent volume claim mounted at `/data`, one backend replica, frontend/backend Services, ConfigMap-backed runtime file paths, external Kafka bootstrap/topic configuration, and Spring Boot actuator startup, liveness, and readiness probes. Apply them in the namespace used for the deployment; the frontend proxy expects the backend Service name `amn-amro-backend` in that same namespace. Default Kafka settings in `k8s/configmap.yaml` are bootstrap `kafka.company.internal:9092`, transaction topic `amn-amro-transactions`, and dead-letter topic `amn-amro-transactions-dead-letter`; these are examples for the externally managed cluster and operators must override the ConfigMap values for their Kafka hostname and topic names. No Kafka broker or controller is bundled.

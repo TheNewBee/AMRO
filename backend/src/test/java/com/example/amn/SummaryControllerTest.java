@@ -12,16 +12,17 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 class SummaryControllerTest {
-  @Test void servesJsonAndCsvFromTheSameReport() throws Exception {
+  @Test void servesExactJsonStringAndCanonicalIntegerCsv() throws Exception {
     var output = Files.createTempFile("summary", ".csv");
     var report = new ReportService(output.toString());
-    report.accept(new Transaction("id", "CL|1", "P|1", BigInteger.valueOf(7), 0));
+    BigInteger exact = new BigInteger("9007199254740993");
+    report.accept(new Transaction("id", "CL|1", "P|1", exact, 0));
     MockMvc mvc = MockMvcBuilders.standaloneSetup(new SummaryController(report)).build();
     mvc.perform(get("/api/summary")).andExpect(status().isOk())
-        .andExpect(content().json("[{\"clientInformation\":\"CL|1\",\"productInformation\":\"P|1\",\"totalTransactionAmount\":7}]"));
+        .andExpect(content().json("[{\"clientInformation\":\"CL|1\",\"productInformation\":\"P|1\",\"totalTransactionAmount\":\"9007199254740993\"}]"));
     mvc.perform(get("/api/summary.csv")).andExpect(status().isOk())
         .andExpect(content().contentTypeCompatibleWith(MediaType.valueOf("text/csv")))
         .andExpect(header().string("Content-Disposition", "attachment; filename=\"Output.csv\""))
-        .andExpect(content().string("Client_Information,Product_Information,Total_Transaction_Amount\nCL|1,P|1,7\n"));
+        .andExpect(content().string("Client_Information,Product_Information,Total_Transaction_Amount\nCL|1,P|1,9007199254740993\n"));
   }
 }

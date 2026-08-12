@@ -4,7 +4,9 @@ import java.math.BigInteger;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.util.HexFormat;
+import org.springframework.stereotype.Component;
 
+@Component
 public final class FixedWidthParser {
   private static String field(String value, int from, int to) { return value.substring(from - 1, to).trim(); }
 

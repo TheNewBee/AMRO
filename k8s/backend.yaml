@@ -27,6 +27,12 @@ spec:
       labels:
         app.kubernetes.io/name: amn-amro-backend
     spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 999
+        runAsGroup: 999
+        fsGroup: 999
+        fsGroupChangePolicy: OnRootMismatch
       containers:
         - name: backend
           image: amn-amro/backend:latest

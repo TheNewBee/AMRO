@@ -5,11 +5,11 @@ metadata:
   labels:
     app.kubernetes.io/name: amn-amro-backend
 data:
-  INPUT_FILE_PATH: /data/Input.txt
-  OUTPUT_FILE_PATH: /data/Output.csv
-  KAFKA_BOOTSTRAP_SERVERS: kafka:9092
-  KAFKA_TRANSACTION_TOPIC: transactions
-  KAFKA_DEAD_LETTER_TOPIC: transactions.dlq
+  INPUT_FILE: /data/Input.txt
+  OUTPUT_FILE: /data/Output.csv
+  KAFKA_BOOTSTRAP_SERVERS: kafka.company.internal:9092
+  TRANSACTION_TOPIC: amn-amro-transactions
+  DLQ_TOPIC: amn-amro-transactions-dead-letter
 ---
 apiVersion: v1
 kind: ConfigMap
