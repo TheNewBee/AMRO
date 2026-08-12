@@ -1,0 +1,48 @@
+<main class="page">
+  <header class="page-header">
+    <div>
+      <p class="eyebrow">Transaction summary</p>
+      <h1>Daily client and product positions</h1>
+      <p class="intro">Current net transaction amounts from the latest processed report.</p>
+    </div>
+    <a class="download" [href]="csvUrl" download="Output.csv">Download Output.csv</a>
+  </header>
+
+  <section class="status" aria-live="polite" aria-atomic="true">
+    @if (loading) {
+      <p>Loading summary…</p>
+    } @else if (error) {
+      <p class="error" role="alert">{{ error }}</p>
+    } @else if (lastRefresh) {
+      <p>Last refreshed {{ lastRefresh | date: 'medium' }}. Refreshes every five seconds.</p>
+    }
+  </section>
+
+  @if (!loading) {
+    <div class="table-wrap">
+      <table>
+        <caption class="visually-hidden">Client and product transaction summary</caption>
+        <thead>
+          <tr>
+            <th scope="col">Client Information</th>
+            <th scope="col">Product Information</th>
+            <th scope="col" class="amount">Total Transaction Amount</th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (row of rows; track row.clientInformation + row.productInformation) {
+            <tr>
+              <td>{{ row.clientInformation }}</td>
+              <td>{{ row.productInformation }}</td>
+              <td class="amount">{{ row.totalTransactionAmount }}</td>
+            </tr>
+          } @empty {
+            <tr>
+              <td colspan="3">No summary rows are available.</td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+  }
+</main>
