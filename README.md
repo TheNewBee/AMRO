@@ -1,12 +1,77 @@
 # AMN AMRO transaction summary
 
-## Architecture
+## System design: capture and present
 
-The Spring Boot backend tails the append-only System A `Input.txt`, validates fixed-width transactions, publishes valid events to external Kafka, and uses Kafka Streams to aggregate net quantities by client/product. It atomically rewrites `Output.csv` under `/data` after accepted aggregate updates. Kafka Streams state/changelogs plus file checkpoint and deduplication metadata support restart recovery. Malformed records are skipped and published to a configurable dead-letter topic with source position and validation details.
+The specified interface is a **current daily net-position report**, not a dump of every System A line. Capture turns each complete `Input.txt` record into a Kafka event as it arrives. Presentation is always the same sorted snapshot through three contracted surfaces: `Output.csv`, `GET /api/summary` (JSON), and `GET /api/summary.csv`. Angular is a client of that snapshot. Kubernetes runs the apps; Kafka stays external.
 
-Kafka Streams runs with `processing.guarantee=exactly_once_v2`. The `__transaction_state` topic's replication factor is a broker-side setting (`transaction.state.log.replication.factor` in the Kafka broker's own configuration), not something this app can control; production clusters should set it to at least `3` on the brokers.
+```
+System A appends Input.txt
+        │  FileIngestionService tails + checkpoints
+        ▼
+   validate 315 / 176|303
+        │
+        ├─ malformed ──► Kafka DLQ (position + error); skip totals
+        └─ valid     ──► Kafka transactions topic (JSON Transaction, key = event id)
+                              │
+                              ▼
+                    Kafka Streams (exactly_once_v2)
+                    group by client|product, sum (long − short)
+                    state store + changelog
+                              │
+                              ▼
+                    ReportService atomically replaces Output.csv
+                              │
+              ┌───────────────┼────────────────┐
+              ▼               ▼                ▼
+         Output.csv    GET /api/summary   GET /api/summary.csv
+                              │
+                              ▼
+                    Angular table, 5s poll + CSV download
+```
 
-The Angular frontend polls `GET /api/summary` every five seconds and offers `GET /api/summary.csv`. Nginx serves the SPA and proxies `/api/` to the backend. Kubernetes runs one backend replica with persistent `/data`; Kafka is not deployed by this repository and must be externally managed.
+### Capture (how Kafka receives data)
+
+Kafka does not read the file. The backend **producer** does.
+
+1. `FileIngestionService` polls the append-only `Input.txt` (startup: existing records; afterwards: complete appended lines only). Offset + SHA-256 fingerprint live in `Input.offset`. Truncation or rewrite is a contract violation.
+2. `FixedWidthParser` builds client key, product key, and signed delta. Event id is a hash of source position plus raw bytes, so restart/redelivery does not mint a new trade.
+3. `KafkaTemplate.send(...).get()` publishes to the configured transactions topic and waits for the broker ack before advancing the checkpoint. Parse failures go to the dead-letter topic instead; ingestion continues.
+4. Topic names and bootstrap servers come from the environment (`TRANSACTION_TOPIC`, `DLQ_TOPIC`, `KAFKA_BOOTSTRAP_SERVERS`). Topics default to **one partition** so one backend replica owns a complete ordered snapshot.
+
+### Stream processing (how Kafka is consumed)
+
+The same JVM is a **Kafka Streams** application (`processing.guarantee=exactly_once_v2`). It consumes the transactions topic, drops duplicate event ids, aggregates into a `KTable`, and on each accepted update rewrites `Output.csv`. Changelog topics recover the store after restart. This is not a nightly batch over the whole file: each appended record updates running totals as soon as Streams accepts it. The supplied 717 records collapse to five report rows because they share five client/product keys — every valid line is processed.
+
+Broker-side `__transaction_state` replication factor is set on the Kafka brokers, not by this app. Production clusters should use at least `3`.
+
+### Present (specified interfaces)
+
+JSON and CSV are generated from the **same** `ReportService` in-memory snapshot (sorted by client, then product; canonical signed integers, no leading zeroes).
+
+| Interface | Contract |
+| --- | --- |
+| File | `Output.csv` replaced atomically after every accepted aggregate (readers never see a partial write) |
+| JSON | `GET /api/summary` → `[{ clientInformation, productInformation, totalTransactionAmount }]` |
+| CSV | `GET /api/summary.csv` → `text/csv`, `Content-Disposition: attachment; filename="Output.csv"`, header `Client_Information,Product_Information,Total_Transaction_Amount` |
+| UI | Angular standalone app: table, visible loading/error/last-refreshed, `exhaustMap` poll every 5s, download link to the CSV endpoint |
+
+Angular does not subscribe to Kafka. Browsers talk HTTP. Nginx serves the SPA and proxies `/api/` to the backend Service.
+
+Checked-in [`sample/Output.csv`](sample/Output.csv) is the independent 717→5 oracle. It is not runtime state. A walkthrough with a live screenshot is [`demo-usage.html`](demo-usage.html).
+
+### Kubernetes placement
+
+| In this repo’s manifests | Not in this repo |
+| --- | --- |
+| Backend Deployment **replicas: 1**, PVC at `/data`, actuator startup/liveness/readiness probes, non-root uid 999 | Kafka brokers / controllers |
+| Frontend Deployment + Service, nginx → `http://amn-amro-backend:8080` | Leader election, multi-writer file sharing |
+| ConfigMap for file paths and Kafka bootstrap/topics | |
+
+One replica is required for deterministic file ownership and a single Streams snapshot. Kafka lifecycle stays an infrastructure responsibility (`k8s/configmap.yaml` example bootstrap `kafka.company.internal:9092`).
+
+## Architecture notes
+
+The Spring Boot backend tails the append-only System A `Input.txt`, validates fixed-width transactions, publishes valid events to external Kafka, and uses Kafka Streams to aggregate net quantities by client/product. Malformed records are skipped and published to a configurable dead-letter topic with source position and validation details. Streams state/changelogs plus file checkpoint and deduplication metadata support restart recovery.
 
 ## Fixed-width and business rules
 
