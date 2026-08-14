@@ -4,6 +4,8 @@
 
 The Spring Boot backend tails the append-only System A `Input.txt`, validates fixed-width transactions, publishes valid events to external Kafka, and uses Kafka Streams to aggregate net quantities by client/product. It atomically rewrites `Output.csv` under `/data` after accepted aggregate updates. Kafka Streams state/changelogs plus file checkpoint and deduplication metadata support restart recovery. Malformed records are skipped and published to a configurable dead-letter topic with source position and validation details.
 
+Kafka Streams runs with `processing.guarantee=exactly_once_v2`. The `__transaction_state` topic's replication factor is a broker-side setting (`transaction.state.log.replication.factor` in the Kafka broker's own configuration), not something this app can control; production clusters should set it to at least `3` on the brokers.
+
 The Angular frontend polls `GET /api/summary` every five seconds and offers `GET /api/summary.csv`. Nginx serves the SPA and proxies `/api/` to the backend. Kubernetes runs one backend replica with persistent `/data`; Kafka is not deployed by this repository and must be externally managed.
 
 ## Fixed-width and business rules

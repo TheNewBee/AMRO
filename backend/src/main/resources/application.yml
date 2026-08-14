@@ -10,6 +10,9 @@ spring:
       value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
       properties.spring.json.trusted.packages: com.example.amn
       auto-offset-reset: earliest
+    streams:
+      properties:
+        processing.guarantee: exactly_once_v2
   lifecycle.timeout-per-shutdown-phase: 30s
 management:
   endpoints.web.exposure.include: health,info
