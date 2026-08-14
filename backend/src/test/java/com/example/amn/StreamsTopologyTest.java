@@ -18,7 +18,7 @@ class StreamsTopologyTest {
     StreamsBuilder builder = new StreamsBuilder();
     var output = new java.util.ArrayList<String>();
     var report = new ReportService("/tmp/streams-topology-test.csv") {
-      @Override public void replaceAggregate(String client, String product, long total) {
+      @Override public synchronized void replaceAggregate(String client, String product, long total) {
         output.add(client + "/" + product + "=" + total);
       }
     };

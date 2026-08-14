@@ -25,12 +25,12 @@ public class ReportService {
     catch (IOException e) { throw new IllegalStateException("cannot create report directory", e); }
   }
 
-  public void replaceAggregate(String client, String product, long total) {
+  public synchronized void replaceAggregate(String client, String product, long total) {
     totals.put(new Key(client, product), total);
     dirty = true;
   }
 
-  public void replaceAll(Collection<Aggregate> restored) {
+  public synchronized void replaceAll(Collection<Aggregate> restored) {
     totals.clear();
     for (Aggregate aggregate : restored) totals.put(new Key(aggregate.client(), aggregate.product()), aggregate.total());
     dirty = true;
