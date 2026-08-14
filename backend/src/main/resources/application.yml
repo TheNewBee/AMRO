@@ -13,6 +13,7 @@ spring:
     streams:
       properties:
         processing.guarantee: exactly_once_v2
+        rocksdb.config.setter: com.example.amn.BoundedRocksDb
   lifecycle.timeout-per-shutdown-phase: 30s
 management:
   endpoints.web.exposure.include: health,info

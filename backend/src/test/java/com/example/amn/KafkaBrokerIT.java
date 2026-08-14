@@ -110,11 +110,13 @@ class KafkaBrokerIT {
     registry.add("amn.topic", () -> TOPIC);
     registry.add("amn.dlq-topic", () -> DLQ);
     registry.add("amn.poll-ms", () -> "50");
+    registry.add("amn.report-flush-ms", () -> "50");
   }
 
   @Autowired TestRestTemplate http;
   @Autowired StreamsBuilderFactoryBean streams;
   @Autowired FileIngestionService ingestion;
+  @Autowired ReportService report;
 
   @Test
   @Order(1)
@@ -125,6 +127,7 @@ class KafkaBrokerIT {
 
     String csv = awaitHttp("/api/summary.csv", CSV_AFTER_STARTUP::equals);
     assertEquals(JSON_AFTER_STARTUP, http.getForObject("/api/summary", String.class));
+    report.flush();
     assertEquals(csv, Files.readString(OUTPUT, StandardCharsets.UTF_8));
 
     ingestion.poll();
@@ -146,6 +149,7 @@ class KafkaBrokerIT {
     assertEquals(JSON_FINAL, http.getForObject("/api/summary", String.class));
     ResponseEntity<String> csvResponse = http.getForEntity("/api/summary.csv", String.class);
     assertEquals(CSV_FINAL, csvResponse.getBody());
+    report.flush();
     assertEquals(CSV_FINAL, Files.readString(OUTPUT, StandardCharsets.UTF_8));
     assertTrue(String.valueOf(csvResponse.getHeaders().getContentType()).contains("text/csv"));
   }
@@ -161,6 +165,7 @@ class KafkaBrokerIT {
     ingestion.poll();
     Thread.sleep(500);
     assertEquals(CSV_FINAL, http.getForObject("/api/summary.csv", String.class));
+    report.flush();
     assertEquals(CSV_FINAL, Files.readString(OUTPUT, StandardCharsets.UTF_8));
   }
 

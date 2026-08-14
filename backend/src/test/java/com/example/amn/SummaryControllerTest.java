@@ -4,7 +4,6 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
-import java.math.BigInteger;
 import java.nio.file.Files;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.MediaType;
@@ -15,8 +14,7 @@ class SummaryControllerTest {
   @Test void servesExactJsonStringAndCanonicalIntegerCsv() throws Exception {
     var output = Files.createTempFile("summary", ".csv");
     var report = new ReportService(output.toString());
-    BigInteger exact = new BigInteger("9007199254740993");
-    report.replaceAggregate("CL|1", "P|1", exact);
+    report.replaceAggregate("CL|1", "P|1", 9007199254740993L);
     MockMvc mvc = MockMvcBuilders.standaloneSetup(new SummaryController(report)).build();
     mvc.perform(get("/api/summary")).andExpect(status().isOk())
         .andExpect(content().json("[{\"clientInformation\":\"CL|1\",\"productInformation\":\"P|1\",\"totalTransactionAmount\":\"9007199254740993\"}]"));

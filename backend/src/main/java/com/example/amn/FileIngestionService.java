@@ -5,7 +5,10 @@ import java.io.RandomAccessFile;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.*;
 import java.security.MessageDigest;
+import java.util.ArrayList;
 import java.util.HexFormat;
+import java.util.List;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.atomic.AtomicLong;
 import org.springframework.beans.factory.annotation.Value;
@@ -41,10 +44,12 @@ public class FileIngestionService {
   public synchronized void poll() {
     if (!Files.exists(input)) return;
     long startingOffset = offset.get();
+    List<Inflight> inflight = new ArrayList<>();
     try {
       long size = Files.size(input);
       if (size < startingOffset || fingerprint != null && !fingerprint.equals(fingerprint(startingOffset)))
         throw new IllegalStateException("input truncation/rewrite detected");
+      long consumed = startingOffset;
       try (RandomAccessFile file = new RandomAccessFile(input.toFile(), "r")) {
         file.seek(startingOffset);
         while (true) {
@@ -63,17 +68,21 @@ public class FileIngestionService {
             try {
               tx = parser.parse(record, position);
             } catch (IllegalArgumentException parseFailure) {
-              sendAndAwait(dlq, String.valueOf(position),
-                  new Transaction(String.valueOf(position), record, parseFailure.getMessage(),
-                      java.math.BigInteger.ZERO, position));
-              offset.set(next);
+              inflight.add(new Inflight(kafka.send(dlq, String.valueOf(position),
+                  new Transaction(String.valueOf(position), record, parseFailure.getMessage(), 0L, position)), next));
+              consumed = next;
               continue;
             }
-            sendAndAwait(topic, tx.id(), tx);
+            inflight.add(new Inflight(kafka.send(topic, tx.id(), tx), next));
           }
-          offset.set(next);
+          consumed = next;
         }
       }
+      for (Inflight pending : inflight) {
+        awaitSend(pending.send());
+        offset.set(pending.next());
+      }
+      offset.set(consumed);
       persistCheckpoint();
     } catch (IOException failure) {
       persistProgress(startingOffset, failure);
@@ -84,9 +93,9 @@ public class FileIngestionService {
     }
   }
 
-  private void sendAndAwait(String destination, String key, Transaction transaction) {
+  private void awaitSend(CompletableFuture<?> send) {
     try {
-      kafka.send(destination, key, transaction).get();
+      send.get();
     } catch (InterruptedException interrupted) {
       Thread.currentThread().interrupt();
       throw new IllegalStateException("Kafka send interrupted", interrupted);
@@ -152,4 +161,5 @@ public class FileIngestionService {
   }
 
   private record Checkpoint(long offset, String fingerprint) {}
+  private record Inflight(CompletableFuture<?> send, long next) {}
 }

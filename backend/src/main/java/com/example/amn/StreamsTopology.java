@@ -1,11 +1,7 @@
 package com.example.amn;
 
-import java.math.BigInteger;
-import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
-import org.apache.kafka.common.serialization.Deserializer;
-import org.apache.kafka.common.serialization.Serializer;
 import org.apache.kafka.common.serialization.Serdes;
 import org.apache.kafka.common.utils.Bytes;
 import org.apache.kafka.streams.KeyValue;
@@ -36,13 +32,13 @@ public class StreamsTopology {
   private static final String KEY_SEPARATOR = "\0";
 
   @Bean
-  KTable<String, BigInteger> transactionAggregates(StreamsBuilder builder, ReportService report,
+  KTable<String, Long> transactionAggregates(StreamsBuilder builder, ReportService report,
       @Value("${amn.topic:transactions}") String topic) {
     JsonSerde<Transaction> transactionSerde = new JsonSerde<>(Transaction.class);
     // ponytail: unbounded; daily file fits. Cap/TTL punctuator if ids survive across days.
     builder.addStateStore(Stores.keyValueStoreBuilder(
         Stores.persistentKeyValueStore(SEEN_IDS_STORE), Serdes.String(), Serdes.Long()));
-    KTable<String, BigInteger> aggregates = builder
+    KTable<String, Long> aggregates = builder
         .stream(topic, Consumed.with(Serdes.String(), transactionSerde))
         .process(() -> new Processor<String, Transaction, String, Transaction>() {
           private KeyValueStore<String, Long> seen;
@@ -60,9 +56,10 @@ public class StreamsTopology {
         }, SEEN_IDS_STORE)
         .selectKey((ignored, transaction) -> transaction.clientInformation() + KEY_SEPARATOR + transaction.productInformation())
         .groupByKey(Grouped.with(Serdes.String(), transactionSerde))
-        .aggregate(() -> BigInteger.ZERO, (key, transaction, total) -> total.add(transaction.delta()),
-            Materialized.<String, BigInteger, KeyValueStore<Bytes, byte[]>>as(STORE_NAME)
-                .withKeySerde(Serdes.String()).withValueSerde(bigIntegerSerde()));
+        // ponytail: long; overflow ~9e8 max-qty records. BigInteger if that happens.
+        .aggregate(() -> 0L, (key, transaction, total) -> Math.addExact(total, transaction.delta()),
+            Materialized.<String, Long, KeyValueStore<Bytes, byte[]>>as(STORE_NAME)
+                .withKeySerde(Serdes.String()).withValueSerde(Serdes.Long()));
     aggregates.toStream().foreach((key, total) -> {
       String[] parts = key.split(KEY_SEPARATOR, -1);
       report.replaceAggregate(parts[0], parts[1], total);
@@ -74,7 +71,7 @@ public class StreamsTopology {
   StreamsBuilderFactoryBeanConfigurer reportHydrationConfigurer(ReportService report) {
     return factory -> factory.setStateListener((newState, oldState) -> {
       if (newState == org.apache.kafka.streams.KafkaStreams.State.RUNNING) {
-        ReadOnlyKeyValueStore<String, BigInteger> store = factory.getKafkaStreams().store(
+        ReadOnlyKeyValueStore<String, Long> store = factory.getKafkaStreams().store(
             org.apache.kafka.streams.StoreQueryParameters.fromNameAndType(
                 STORE_NAME, QueryableStoreTypes.keyValueStore()));
         hydrateReport(report, store);
@@ -82,21 +79,15 @@ public class StreamsTopology {
     });
   }
 
-  static void hydrateReport(ReportService report, ReadOnlyKeyValueStore<String, BigInteger> store) {
+  static void hydrateReport(ReportService report, ReadOnlyKeyValueStore<String, Long> store) {
     List<ReportService.Aggregate> restored = new ArrayList<>();
     try (var entries = store.all()) {
       while (entries.hasNext()) {
-        KeyValue<String, BigInteger> entry = entries.next();
+        KeyValue<String, Long> entry = entries.next();
         String[] parts = entry.key.split(KEY_SEPARATOR, -1);
         restored.add(new ReportService.Aggregate(parts[0], parts[1], entry.value));
       }
     }
     report.replaceAll(restored);
-  }
-
-  static org.apache.kafka.common.serialization.Serde<BigInteger> bigIntegerSerde() {
-    Serializer<BigInteger> serializer = (topic, value) -> value == null ? null : value.toString().getBytes(StandardCharsets.UTF_8);
-    Deserializer<BigInteger> deserializer = (topic, bytes) -> bytes == null ? null : new BigInteger(new String(bytes, StandardCharsets.UTF_8));
-    return Serdes.serdeFrom(serializer, deserializer);
   }
 }
