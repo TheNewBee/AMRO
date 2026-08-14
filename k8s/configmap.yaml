@@ -2,12 +2,13 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: amn-amro-backend-config
+  namespace: amn-amro
   labels:
     app.kubernetes.io/name: amn-amro-backend
 data:
   INPUT_FILE: /data/Input.txt
   OUTPUT_FILE: /data/Output.csv
-  KAFKA_BOOTSTRAP_SERVERS: kafka.company.internal:9092
+  KAFKA_BOOTSTRAP_SERVERS: kafka:9092
   TRANSACTION_TOPIC: amn-amro-transactions
   DLQ_TOPIC: amn-amro-transactions-dead-letter
 ---
@@ -15,6 +16,7 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: amn-amro-frontend-config
+  namespace: amn-amro
   labels:
     app.kubernetes.io/name: amn-amro-frontend
 data:
