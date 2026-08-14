@@ -65,7 +65,7 @@ class StreamsTopologyTest {
         Files.readString(output));
   }
 
-  @Test void totalSerdeReadsLegacyDecimalAndNativeLong() {
+  @Test void totalSerdeRoundTripsDecimalBytes() {
     var serde = StreamsTopology.totalSerde();
     assertEquals(42L, serde.deserializer().deserialize("t", "42".getBytes(java.nio.charset.StandardCharsets.UTF_8)));
     assertEquals(42L, serde.deserializer().deserialize("t", serde.serializer().serialize("t", 42L)));

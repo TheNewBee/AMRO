@@ -3,9 +3,7 @@ package com.example.amn;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
-import org.apache.kafka.common.serialization.Deserializer;
 import org.apache.kafka.common.serialization.Serdes;
-import org.apache.kafka.common.serialization.Serializer;
 import org.apache.kafka.common.utils.Bytes;
 import org.apache.kafka.streams.KeyValue;
 import org.apache.kafka.streams.StreamsBuilder;
@@ -94,15 +92,9 @@ public class StreamsTopology {
     report.replaceAll(restored);
   }
 
-  // ponytail: 8-byte Long plus UTF-8 decimal fallback so pre-long changelogs restore.
   static org.apache.kafka.common.serialization.Serde<Long> totalSerde() {
-    Serializer<Long> serializer = Serdes.Long().serializer();
-    Deserializer<Long> nativeLong = Serdes.Long().deserializer();
-    Deserializer<Long> deserializer = (topic, bytes) -> {
-      if (bytes == null) return null;
-      if (bytes.length == 8) return nativeLong.deserialize(topic, bytes);
-      return Long.parseLong(new String(bytes, StandardCharsets.UTF_8));
-    };
-    return Serdes.serdeFrom(serializer, deserializer);
+    return Serdes.serdeFrom(
+        (topic, value) -> value == null ? null : Long.toString(value).getBytes(StandardCharsets.UTF_8),
+        (topic, bytes) -> bytes == null ? null : Long.parseLong(new String(bytes, StandardCharsets.UTF_8)));
   }
 }
