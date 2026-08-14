@@ -14,17 +14,9 @@ public class ReportService {
   public record Row(String clientInformation, String productInformation, String totalTransactionAmount) {}
   private static final String KEY_SEPARATOR = "\0";
   private final Map<String, BigInteger> totals = new ConcurrentHashMap<>();
-  private final Set<String> ids = ConcurrentHashMap.newKeySet();
   private final Path output;
 
   public ReportService(@Value("${amn.output-file:/data/Output.csv}") String output) { this.output = Path.of(output); }
-
-  public synchronized boolean accept(Transaction tx) {
-    if (!ids.add(tx.id())) return false;
-    totals.merge(tx.clientInformation() + KEY_SEPARATOR + tx.productInformation(), tx.delta(), BigInteger::add);
-    writeAtomically();
-    return true;
-  }
 
   public synchronized void replaceAggregate(String client, String product, BigInteger total) {
     totals.put(client + KEY_SEPARATOR + product, total);

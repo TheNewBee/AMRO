@@ -16,7 +16,7 @@ class SummaryControllerTest {
     var output = Files.createTempFile("summary", ".csv");
     var report = new ReportService(output.toString());
     BigInteger exact = new BigInteger("9007199254740993");
-    report.accept(new Transaction("id", "CL|1", "P|1", exact, 0));
+    report.replaceAggregate("CL|1", "P|1", exact);
     MockMvc mvc = MockMvcBuilders.standaloneSetup(new SummaryController(report)).build();
     mvc.perform(get("/api/summary")).andExpect(status().isOk())
         .andExpect(content().json("[{\"clientInformation\":\"CL|1\",\"productInformation\":\"P|1\",\"totalTransactionAmount\":\"9007199254740993\"}]"));
