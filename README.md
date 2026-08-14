@@ -103,24 +103,13 @@ The independent expected fixture is [`sample/Output.csv`](sample/Output.csv); it
 
 ## Docker
 
-Build the application artifacts first so the conventional paths exist:
+One command builds the jar and SPA, then brings up Kafka, backend, and frontend:
 
 ```bash
-mvn -f backend/pom.xml package
-npm --prefix frontend ci
-npm --prefix frontend run build
-
-docker build -f docker/backend/Dockerfile -t amn-amro/backend:latest .
-docker build -f docker/frontend/Dockerfile -t amn-amro/frontend:latest .
+./scripts/up.sh
 ```
 
-The backend image copies `backend/target/*.jar` and seeds `/data/Input.txt` from the checked-in fixture when the volume is empty. The frontend image copies the Angular browser build from `frontend/dist`; the Dockerfile assumes the first project directory there contains the browser assets.
-
-Bring up Kafka, backend, and frontend together:
-
-```bash
-docker compose up --build
-```
+Pass Compose flags through (`./scripts/up.sh -d`). Images copy `backend/target/*.jar` and `frontend/dist/`.
 
 UI is `http://localhost:8081`. Backend API is `http://localhost:8080`. Compose waits for the broker to be healthy before starting the backend. Empty `/data` is seeded with the 717-record `Input.txt`. After the stack is up, `scripts/e2e-stack.sh compose` (or `k8s`) checks the fixture through the deployed Kafka, then appends a live record and a dead-letter line.
 
