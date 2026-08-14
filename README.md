@@ -34,13 +34,13 @@ System A appends Input.txt
 Kafka does not read the file. The backend **producer** does.
 
 1. `FileIngestionService` polls the append-only `Input.txt` (startup: existing records; afterwards: complete appended lines only). Offset plus a SHA-256 of the first 4 KB of the consumed prefix live in `Input.offset`. Truncation or rewrite of that head is a contract violation.
-2. `FixedWidthParser` builds client key, product key, and signed delta. Event id is a hash of source position plus raw bytes, so restart/redelivery does not mint a new trade.
-3. `KafkaTemplate.send(...).get()` publishes to the configured transactions topic and waits for the broker ack before advancing the checkpoint. Parse failures go to the dead-letter topic instead; ingestion continues.
+2. `FixedWidthParser` builds client key, product key, and signed delta. Event id is the source byte offset; rewrite of consumed bytes is a contract violation, so content hashing is redundant.
+3. `KafkaTemplate.send(...)` publishes to the configured transactions topic; the poll awaits outstanding acks once, then advances the checkpoint. Parse failures go to the dead-letter topic instead; ingestion continues.
 4. Topic names and bootstrap servers come from the environment (`TRANSACTION_TOPIC`, `DLQ_TOPIC`, `KAFKA_BOOTSTRAP_SERVERS`). Topics default to **one partition** so one backend replica owns a complete ordered snapshot.
 
 ### Stream processing (how Kafka is consumed)
 
-The same JVM is a **Kafka Streams** application (`processing.guarantee=exactly_once_v2`). It consumes the transactions topic, drops duplicate event ids, aggregates into a `KTable`, and on each accepted update rewrites `Output.csv`. Changelog topics recover the store after restart. This is not a nightly batch over the whole file: each appended record updates running totals as soon as Streams accepts it. The supplied 717 records collapse to five report rows because they share five client/product keys — every valid line is processed.
+The same JVM is a **Kafka Streams** application (`processing.guarantee=exactly_once_v2`). It consumes the transactions topic, drops duplicate event ids, aggregates into a `KTable`, and marks the report dirty; `Output.csv` is rewritten atomically on a 1s flush. Changelog topics recover the store after restart. This is not a nightly batch over the whole file: each appended record updates running totals as soon as Streams accepts it. The supplied 717 records collapse to five report rows because they share five client/product keys — every valid line is processed.
 
 Broker-side `__transaction_state` replication factor is set on the Kafka brokers, not by this app. Production clusters should use at least `3`.
 
@@ -50,7 +50,7 @@ JSON and CSV are generated from the **same** `ReportService` in-memory snapshot 
 
 | Interface | Contract |
 | --- | --- |
-| File | `Output.csv` replaced atomically after every accepted aggregate (readers never see a partial write) |
+| File | `Output.csv` replaced atomically on a ≤1s dirty flush (readers never see a partial write) |
 | JSON | `GET /api/summary` → `[{ clientInformation, productInformation, totalTransactionAmount }]` |
 | CSV | `GET /api/summary.csv` → `text/csv`, `Content-Disposition: attachment; filename="Output.csv"`, header `Client_Information,Product_Information,Total_Transaction_Amount` |
 | UI | Angular standalone app: table, visible loading/error/last-refreshed, `exhaustMap` poll every 5s, download link to the CSV endpoint |
@@ -80,7 +80,7 @@ The Spring Boot backend tails the append-only System A `Input.txt`, validates fi
 - Blank lines are ignored, and a final record may omit a trailing newline. Record code, length, numeric fields, and signs are validated.
 - Client information is `CLIENT TYPE|CLIENT NUMBER|ACCOUNT NUMBER|SUBACCOUNT NUMBER`; product information is `EXCHANGE CODE|PRODUCT GROUP CODE|SYMBOL|EXPIRATION DATE`. Each component is trimmed before joining.
 - Long quantity is reduced by short quantity using exact integer arithmetic. Blank and `+` signs are positive; `-` is negative; other signs are invalid. Amounts are canonical signed base-10 integers without leading zeroes.
-- Report rows sort by client components and then product components. `Output.csv` is append-free report output: it is replaced atomically after every accepted update, while `Input.txt` remains append-only. Truncation or rewrite is an operational contract violation. Deterministic source/event identity prevents duplicate aggregation after restart or redelivery.
+- Report rows sort by client components and then product components. `Output.csv` is append-free report output: it is replaced atomically on a ≤1s dirty flush, while `Input.txt` remains append-only. Truncation or rewrite is an operational contract violation. Source-position event ids prevent duplicate aggregation after restart or redelivery.
 
 ## REST API
 
@@ -93,7 +93,7 @@ JSON rows contain `clientInformation`, `productInformation`, and `totalTransacti
 
 ## Local prerequisites and run paths
 
-Prerequisites: Java 21+, Maven, Node.js/npm with the Angular CLI, and Docker. The complete stack is Kafka + backend + frontend.
+Prerequisites: Java 21+, Maven, Node.js 20+/npm, and Docker. `./scripts/up.sh` checks these, offers to install or build if anything is missing, then starts the stack. The complete stack is Kafka + backend + frontend.
 
 For a local JVM/Angular loop without Compose, start the bundled broker (`docker compose up kafka`) or any Kafka at `localhost:9092`, then run the backend from its Spring Boot Maven project and the frontend with its Angular development server. Configure local paths to the checked-in `Input.txt` and a writable `Output.csv`. The runtime defaults are `/data/Input.txt` and `/data/Output.csv`.
 
@@ -103,13 +103,13 @@ The independent expected fixture is [`sample/Output.csv`](sample/Output.csv); it
 
 ## Docker
 
-One command builds the jar and SPA, then brings up Kafka, backend, and frontend:
+One command checks Java 21+, Maven, Node 20+/npm, and Docker, offers to install or build anything missing, then brings up Kafka, backend, and frontend:
 
 ```bash
 ./scripts/up.sh
 ```
 
-Pass Compose flags through (`./scripts/up.sh -d`). Images copy `backend/target/*.jar` and `frontend/dist/`.
+`-y` / `--yes` accepts install and build prompts. `--rebuild` rebuilds even when artifacts already exist. Extra args go to Compose (`./scripts/up.sh -d`). Images copy `backend/target/*.jar` and `frontend/dist/`.
 
 UI is `http://localhost:8081`. Backend API is `http://localhost:8080`. Compose waits for the broker to be healthy before starting the backend. Empty `/data` is seeded with the 717-record `Input.txt`. After the stack is up, `scripts/e2e-stack.sh compose` (or `k8s`) checks the fixture through the deployed Kafka, then appends a live record and a dead-letter line.
 
