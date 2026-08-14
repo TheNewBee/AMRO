@@ -91,7 +91,7 @@ Expose same sorted report as JSON and downloadable CSV. Provide Angular summary 
 
 - Tests assert external behavior and stable contracts rather than internal method structure.
 - Primary acceptance seam is REST API plus generated `Output.csv`: submit known transactions, observe sorted JSON and CSV, and compare exact rows and headers.
-- Secondary system seam is Kafka integration: verify startup ingestion, appended records, aggregation, duplicate suppression, restart recovery, dead-letter publication, and per-event report replacement with Testcontainers-backed Kafka.
+- Secondary system seam is Kafka integration: verify startup ingestion, appended records, aggregation, duplicate suppression, restart recovery, dead-letter publication, and per-event report replacement with Testcontainers-backed Kafka. Deployed-stack e2e (`scripts/e2e-stack.sh`) repeats fixture, append, and dead-letter checks against Compose or Kubernetes Kafka.
 - Narrow parser seam covers trust-boundary cases difficult to isolate at higher seams: 176/303 lengths, ignored filler, blank lines, unterminated final record, record code, signs, numeric validation, trimming, and fixed-width boundaries.
 - Report tests cover canonical integer rendering, deterministic ordering, exact headers, escaping, and atomic replacement behavior.
 - Spring MVC tests cover JSON shape, CSV media type, attachment filename, and agreement between representations.

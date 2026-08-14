@@ -122,7 +122,7 @@ Bring up Kafka, backend, and frontend together:
 docker compose up --build
 ```
 
-UI is `http://localhost:8081`. Backend API is `http://localhost:8080`. Compose waits for the broker to be healthy before starting the backend. Empty `/data` is seeded with the 717-record `Input.txt`.
+UI is `http://localhost:8081`. Backend API is `http://localhost:8080`. Compose waits for the broker to be healthy before starting the backend. Empty `/data` is seeded with the 717-record `Input.txt`. After the stack is up, `scripts/e2e-stack.sh compose` (or `k8s`) checks the fixture through the deployed Kafka, then appends a live record and a dead-letter line.
 
 ## Kubernetes
 
