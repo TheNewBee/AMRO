@@ -6,7 +6,7 @@ Supplied artifacts conflict on record length: file specification describes field
 
 ## Solution
 
-Build Java 21+ Spring Boot application that reads existing and appended records from append-only `Input.txt`, validates and publishes valid transactions to Kafka, aggregates net quantities with Kafka Streams, and rewrites `Output.csv` after every accepted aggregate update.
+Build Java 21+ Spring Boot application that reads existing and appended records from append-only `Input.txt`, validates and publishes valid transactions to Kafka, aggregates net quantities with Kafka Streams, and rewrites `Output.csv` on a short dirty-flag flush.
 
 Expose same sorted report as JSON and downloadable CSV. Provide Angular summary screen that polls JSON every five seconds and links CSV download. Package backend, frontend, and a single-broker Kafka as containers. Kubernetes manifests deploy Kafka, one backend replica with persistent `/data` storage, and the frontend. Bootstrap/topic names stay configurable so a company cluster can replace the bundled broker.
 
@@ -70,13 +70,13 @@ Expose same sorted report as JSON and downloadable CSV. Provide Angular summary 
 - Long and short quantities use exact integer arithmetic. Blank or `+` signs are positive; `-` is negative; other signs are malformed.
 - Transaction delta equals signed long quantity minus signed short quantity.
 - File ingestion reads current records at startup, watches for complete appended lines, persists source offset metadata, and treats truncation/rewrite as an operational contract violation.
-- Stable identifiers derived from source identity/offset and record content prevent duplicate aggregation after restart or redelivery.
+- Stable identifiers derived from source byte offset prevent duplicate aggregation after restart or redelivery. File truncation/rewrite is rejected by the ingestion fingerprint.
 - Malformed startup and appended records are published to configurable Kafka dead-letter topic and skipped; service continues processing valid records.
 - Kafka Streams DSL groups events by client/product key, aggregates transaction deltas, and materializes queryable state with changelog recovery.
 - Kafka processing uses transactional or exactly-once settings where supported. Topic names, bootstrap servers, and processing properties remain configurable. Docker Compose and Kubernetes deploy a single-broker Kafka by default.
 - Topics default to one partition for complete ordered snapshot ownership by one backend replica.
 - Report rows sort ascending by client components and then product components.
-- `Output.csv` is rewritten after every accepted aggregate update through same-volume temporary file and atomic replacement.
+- `Output.csv` is rewritten on a ≤1s dirty-flag flush through same-volume temporary file and atomic replacement.
 - Runtime paths default to `/data/Input.txt` and `/data/Output.csv`; checkpoint and deduplication metadata also persist under `/data`. Local paths remain configurable.
 - JSON contract is `GET /api/summary`, returning an array whose rows contain `clientInformation`, `productInformation`, and `totalTransactionAmount`.
 - CSV contract is `GET /api/summary.csv`, returning `text/csv` with `Content-Disposition: attachment; filename="Output.csv"`.
