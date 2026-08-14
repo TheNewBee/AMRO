@@ -2,8 +2,8 @@ package com.example.amn;
 
 import java.math.BigInteger;
 import java.nio.charset.StandardCharsets;
-import java.util.HashMap;
-import java.util.Map;
+import java.util.ArrayList;
+import java.util.List;
 import org.apache.kafka.common.serialization.Deserializer;
 import org.apache.kafka.common.serialization.Serializer;
 import org.apache.kafka.common.serialization.Serdes;
@@ -83,11 +83,12 @@ public class StreamsTopology {
   }
 
   static void hydrateReport(ReportService report, ReadOnlyKeyValueStore<String, BigInteger> store) {
-    Map<String, BigInteger> restored = new HashMap<>();
+    List<ReportService.Aggregate> restored = new ArrayList<>();
     try (var entries = store.all()) {
       while (entries.hasNext()) {
         KeyValue<String, BigInteger> entry = entries.next();
-        restored.put(entry.key, entry.value);
+        String[] parts = entry.key.split(KEY_SEPARATOR, -1);
+        restored.add(new ReportService.Aggregate(parts[0], parts[1], entry.value));
       }
     }
     report.replaceAll(restored);

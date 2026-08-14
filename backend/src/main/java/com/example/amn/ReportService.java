@@ -12,28 +12,29 @@ import org.springframework.stereotype.Service;
 @Service
 public class ReportService {
   public record Row(String clientInformation, String productInformation, String totalTransactionAmount) {}
-  private static final String KEY_SEPARATOR = "\0";
-  private final Map<String, BigInteger> totals = new ConcurrentHashMap<>();
+  public record Aggregate(String client, String product, BigInteger total) {}
+  private record Key(String client, String product) {}
+  private final Map<Key, BigInteger> totals = new ConcurrentHashMap<>();
   private final Path output;
 
   public ReportService(@Value("${amn.output-file:/data/Output.csv}") String output) { this.output = Path.of(output); }
 
   public synchronized void replaceAggregate(String client, String product, BigInteger total) {
-    totals.put(client + KEY_SEPARATOR + product, total);
+    totals.put(new Key(client, product), total);
     writeAtomically();
   }
 
-  public synchronized void replaceAll(Map<String, BigInteger> restored) {
+  public synchronized void replaceAll(Collection<Aggregate> restored) {
     totals.clear();
-    totals.putAll(restored);
+    for (Aggregate aggregate : restored) totals.put(new Key(aggregate.client(), aggregate.product()), aggregate.total());
     writeAtomically();
   }
 
   public synchronized List<Row> rows() {
-    return totals.entrySet().stream().map(entry -> {
-      String[] parts = entry.getKey().split(KEY_SEPARATOR, -1);
-      return new Row(parts[0], parts[1], entry.getValue().toString());
-    }).sorted(Comparator.comparing(Row::clientInformation).thenComparing(Row::productInformation)).toList();
+    return totals.entrySet().stream()
+        .map(entry -> new Row(entry.getKey().client(), entry.getKey().product(), entry.getValue().toString()))
+        .sorted(Comparator.comparing(Row::clientInformation).thenComparing(Row::productInformation))
+        .toList();
   }
 
   public synchronized String csv() {
