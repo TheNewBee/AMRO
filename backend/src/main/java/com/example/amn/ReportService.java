@@ -51,7 +51,12 @@ public class ReportService {
 
   @Scheduled(fixedDelayString = "${amn.report-flush-ms:1000}")
   @PreDestroy
-  public synchronized void flush() { if (dirty) { dirty = false; writeAtomically(); } }
+  public synchronized void flush() {
+    if (!dirty) return;
+    dirty = false;
+    try { writeAtomically(); }
+    catch (RuntimeException e) { dirty = true; throw e; }
+  }
 
   private void writeAtomically() {
     try {

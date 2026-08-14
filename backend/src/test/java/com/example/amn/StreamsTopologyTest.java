@@ -64,4 +64,10 @@ class StreamsTopologyTest {
     assertEquals("Client_Information,Product_Information,Total_Transaction_Amount\nCL|9,P|9,42\n",
         Files.readString(output));
   }
+
+  @Test void totalSerdeReadsLegacyDecimalAndNativeLong() {
+    var serde = StreamsTopology.totalSerde();
+    assertEquals(42L, serde.deserializer().deserialize("t", "42".getBytes(java.nio.charset.StandardCharsets.UTF_8)));
+    assertEquals(42L, serde.deserializer().deserialize("t", serde.serializer().serialize("t", 42L)));
+  }
 }
