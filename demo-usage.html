@@ -33,7 +33,7 @@
 <main>
   <p class="eyebrow">Live demo · 14 Aug 2026</p>
   <h1>How to use the transaction summary</h1>
-  <p class="intro">This page was generated from a running Kubernetes boot of the AMN AMRO app (backend + frontend + external Kafka). The screenshot and table below are the live UI and API, not mocks.</p>
+  <p class="intro">This page was generated from a running Kubernetes boot of the AMN AMRO app (Kafka + backend + frontend). The screenshot and table below are the live UI and API, not mocks.</p>
   <p><span class="pill">UI http://127.0.0.1:18080</span> &nbsp; <span class="pill">API http://127.0.0.1:18081</span></p>
 
   <h2>1. What you see in the browser</h2>
@@ -77,10 +77,10 @@ curl http://127.0.0.1:18080/api/summary</pre></div>
 
   <h2>5. How to boot it yourself</h2>
   <ol class="steps">
-    <li>Need Java 21, Maven, Node, an external Kafka cluster, and Docker if you want containers.</li>
+    <li>Need Java 21, Maven, Node, and Docker. Kafka is part of the stack.</li>
     <li>Backend: <code>mvn -f backend/pom.xml package</code> then run the Spring Boot app with <code>INPUT_FILE</code>, <code>OUTPUT_FILE</code>, and <code>KAFKA_BOOTSTRAP_SERVERS</code> pointed at your files and Kafka.</li>
     <li>Frontend: <code>npm --prefix frontend ci && npm --prefix frontend start</code> — the dev server proxies <code>/api</code> to <code>localhost:8080</code>.</li>
-    <li>Containers: build both images (see README), then <code>kubectl apply -f k8s/</code> after Kafka exists. This demo used one backend replica, a PVC at <code>/data</code>, and Kafka as an external service.</li>
+    <li>Complete stack: <code>docker compose up --build</code>, or build both app images then <code>kubectl apply -f k8s/</code>. That deploys Kafka, one backend replica with a PVC at <code>/data</code>, and the frontend.</li>
     <li>Drop or append records on <code>Input.txt</code>. Wait a few seconds. The table refreshes; CSV download matches JSON.</li>
   </ol>
   <p>Full run notes: <a href="README.md">README.md</a>. Requirements: <a href="SPEC.md">SPEC.md</a>.</p>

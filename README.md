@@ -2,7 +2,7 @@
 
 ## System design: capture and present
 
-The specified interface is a **current daily net-position report**, not a dump of every System A line. Capture turns each complete `Input.txt` record into a Kafka event as it arrives. Presentation is always the same sorted snapshot through three contracted surfaces: `Output.csv`, `GET /api/summary` (JSON), and `GET /api/summary.csv`. Angular is a client of that snapshot. Kubernetes runs the apps; Kafka stays external.
+The specified interface is a **current daily net-position report**, not a dump of every System A line. Capture turns each complete `Input.txt` record into a Kafka event as it arrives. Presentation is always the same sorted snapshot through three contracted surfaces: `Output.csv`, `GET /api/summary` (JSON), and `GET /api/summary.csv`. Angular is a client of that snapshot. Docker Compose and Kubernetes deploy Kafka, the backend, and the frontend together.
 
 ```
 System A appends Input.txt
@@ -63,15 +63,16 @@ Checked-in [`sample/Output.csv`](sample/Output.csv) is the independent 717→5 o
 
 | In this repo’s manifests | Not in this repo |
 | --- | --- |
-| Backend Deployment **replicas: 1**, PVC at `/data`, actuator startup/liveness/readiness probes, non-root uid 999 | Kafka brokers / controllers |
-| Frontend Deployment + Service, nginx → `http://amn-amro-backend:8080` | Leader election, multi-writer file sharing |
-| ConfigMap for file paths and Kafka bootstrap/topics | |
+| Kafka Deployment + Service (`apache/kafka:3.8.1`, KRaft single broker, RF=1) | Multi-broker HA / Strimzi operator |
+| Backend Deployment **replicas: 1**, PVC at `/data`, wait-for-kafka init, actuator probes, non-root uid 999 | Leader election, multi-writer file sharing |
+| Frontend Deployment + Service, nginx → `http://amn-amro-backend:8080` | |
+| ConfigMap: file paths, bootstrap `kafka:9092`, topic names | |
 
-One replica is required for deterministic file ownership and a single Streams snapshot. Kafka lifecycle stays an infrastructure responsibility (`k8s/configmap.yaml` example bootstrap `kafka.company.internal:9092`).
+One backend replica is required for deterministic file ownership and a single Streams snapshot. Override `KAFKA_BOOTSTRAP_SERVERS` if you point at a company cluster instead of the bundled broker.
 
 ## Architecture notes
 
-The Spring Boot backend tails the append-only System A `Input.txt`, validates fixed-width transactions, publishes valid events to external Kafka, and uses Kafka Streams to aggregate net quantities by client/product. Malformed records are skipped and published to a configurable dead-letter topic with source position and validation details. Streams state/changelogs plus file checkpoint and deduplication metadata support restart recovery.
+The Spring Boot backend tails the append-only System A `Input.txt`, validates fixed-width transactions, publishes valid events to Kafka, and uses Kafka Streams to aggregate net quantities by client/product. Malformed records are skipped and published to a configurable dead-letter topic with source position and validation details. Streams state/changelogs plus file checkpoint and deduplication metadata support restart recovery.
 
 ## Fixed-width and business rules
 
@@ -92,7 +93,9 @@ JSON rows contain `clientInformation`, `productInformation`, and `totalTransacti
 
 ## Local prerequisites and run paths
 
-Prerequisites: Java 21+, Maven, Node.js/npm with the Angular CLI, and an externally reachable Kafka cluster. Build the backend and frontend using their project instructions, then run the backend from its Spring Boot Maven project and the frontend with its Angular development server. Configure local paths to the checked-in `Input.txt` and a writable `Output.csv`, and configure Kafka bootstrap/topic properties for the local cluster. The runtime defaults are `/data/Input.txt` and `/data/Output.csv`.
+Prerequisites: Java 21+, Maven, Node.js/npm with the Angular CLI, and Docker. The complete stack is Kafka + backend + frontend.
+
+For a local JVM/Angular loop without Compose, start the bundled broker (`docker compose up kafka`) or any Kafka at `localhost:9092`, then run the backend from its Spring Boot Maven project and the frontend with its Angular development server. Configure local paths to the checked-in `Input.txt` and a writable `Output.csv`. The runtime defaults are `/data/Input.txt` and `/data/Output.csv`.
 
 For local Angular development, `npm --prefix frontend start` loads `frontend/proxy.conf.json`; relative `/api` requests are proxied from `localhost:4200` to the backend at `localhost:8080`. Start the backend on port 8080, or change the proxy target for another local endpoint.
 
@@ -111,23 +114,23 @@ docker build -f docker/backend/Dockerfile -t amn-amro/backend:latest .
 docker build -f docker/frontend/Dockerfile -t amn-amro/frontend:latest .
 ```
 
-The backend image copies `backend/target/*.jar`. The frontend image copies the Angular browser build from `frontend/dist`; the Dockerfile assumes the first project directory there contains the browser assets. Run with a writable `/data` volume and external Kafka, for example:
+The backend image copies `backend/target/*.jar` and seeds `/data/Input.txt` from the checked-in fixture when the volume is empty. The frontend image copies the Angular browser build from `frontend/dist`; the Dockerfile assumes the first project directory there contains the browser assets.
+
+Bring up Kafka, backend, and frontend together:
 
 ```bash
-docker run --rm -p 8080:8080 -v "$PWD:/data" \
-  -e KAFKA_BOOTSTRAP_SERVERS=host.docker.internal:9092 amn-amro/backend:latest
-docker run --rm -p 8081:80 amn-amro/frontend:latest
+docker compose up --build
 ```
 
-The frontend proxy targets `amn-amro-backend:8080` in Kubernetes. For standalone Docker, provide equivalent DNS or adjust the nginx upstream at image-build/deployment time.
+UI is `http://localhost:8081`. Backend API is `http://localhost:8080`. Compose waits for the broker to be healthy before starting the backend. Empty `/data` is seeded with the 717-record `Input.txt`.
 
 ## Kubernetes
 
-Apply the manifests after building/pushing the two images and provisioning external Kafka:
+Build the two application images, load them into the cluster, then apply every manifest. Kafka is included:
 
 ```bash
 kubectl apply -f k8s/
 kubectl -n amn-amro get pods,svc,pvc
 ```
 
-The manifests create a persistent volume claim mounted at `/data`, one backend replica, frontend/backend Services, ConfigMap-backed runtime file paths, external Kafka bootstrap/topic configuration, and Spring Boot actuator startup, liveness, and readiness probes. Apply them in the namespace used for the deployment; the frontend proxy expects the backend Service name `amn-amro-backend` in that same namespace. Default Kafka settings in `k8s/configmap.yaml` are bootstrap `kafka.company.internal:9092`, transaction topic `amn-amro-transactions`, and dead-letter topic `amn-amro-transactions-dead-letter`; these are examples for the externally managed cluster and operators must override the ConfigMap values for their Kafka hostname and topic names. No Kafka broker or controller is bundled.
+That creates namespace `amn-amro`, a KRaft Kafka broker Service at `kafka:9092`, a PVC mounted at `/data`, one backend replica (init container waits until Kafka accepts TCP), frontend/backend Services, ConfigMaps, and Spring Boot actuator probes. The frontend proxy expects Service name `amn-amro-backend` in the same namespace. Default topics are `amn-amro-transactions` and `amn-amro-transactions-dead-letter`. Override `KAFKA_BOOTSTRAP_SERVERS` in the backend ConfigMap only if you replace the bundled broker.

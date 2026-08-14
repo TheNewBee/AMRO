@@ -6,9 +6,9 @@ Supplied artifacts conflict on record length: file specification describes field
 
 ## Solution
 
-Build Java 21+ Spring Boot application that reads existing and appended records from append-only `Input.txt`, validates and publishes valid transactions to external Kafka, aggregates net quantities with Kafka Streams, and rewrites `Output.csv` after every accepted aggregate update.
+Build Java 21+ Spring Boot application that reads existing and appended records from append-only `Input.txt`, validates and publishes valid transactions to Kafka, aggregates net quantities with Kafka Streams, and rewrites `Output.csv` after every accepted aggregate update.
 
-Expose same sorted report as JSON and downloadable CSV. Provide Angular summary screen that polls JSON every five seconds and links CSV download. Package backend and frontend as containers with Kubernetes manifests. Deploy one backend replica with persistent `/data` storage; Kafka remains externally managed.
+Expose same sorted report as JSON and downloadable CSV. Provide Angular summary screen that polls JSON every five seconds and links CSV download. Package backend, frontend, and a single-broker Kafka as containers. Kubernetes manifests deploy Kafka, one backend replica with persistent `/data` storage, and the frontend. Bootstrap/topic names stay configurable so a company cluster can replace the bundled broker.
 
 ## User Stories
 
@@ -50,7 +50,7 @@ Expose same sorted report as JSON and downloadable CSV. Provide Angular summary 
 36. As a platform operator, I want backend and frontend container images, so that both applications can run consistently.
 37. As a platform operator, I want Kubernetes manifests for backend and frontend, so that the solution can be deployed without inventing resource definitions.
 38. As a platform operator, I want one backend replica mounted to persistent `/data` storage, so that file ownership, checkpoints, and report writing remain deterministic.
-39. As a platform operator, I want external Kafka rather than an application-managed Kafka deployment, so that Kafka lifecycle remains an infrastructure responsibility.
+39. As a platform operator, I want Kafka included in Docker Compose and Kubernetes so the solution deploys as a complete stack, while bootstrap servers remain configurable.
 40. As a developer, I want Java 21+ and Spring Boot, so that implementation meets required technology constraints.
 41. As a developer, I want exact integer arithmetic, so that aggregation cannot lose precision through floating-point conversion.
 42. As a developer, I want reusable parsing, aggregation, report, and API boundaries, so that each business rule has one implementation.
@@ -73,7 +73,7 @@ Expose same sorted report as JSON and downloadable CSV. Provide Angular summary 
 - Stable identifiers derived from source identity/offset and record content prevent duplicate aggregation after restart or redelivery.
 - Malformed startup and appended records are published to configurable Kafka dead-letter topic and skipped; service continues processing valid records.
 - Kafka Streams DSL groups events by client/product key, aggregates transaction deltas, and materializes queryable state with changelog recovery.
-- Kafka processing uses transactional or exactly-once settings where supported. Topic names, bootstrap servers, and processing properties remain externally configurable.
+- Kafka processing uses transactional or exactly-once settings where supported. Topic names, bootstrap servers, and processing properties remain configurable. Docker Compose and Kubernetes deploy a single-broker Kafka by default.
 - Topics default to one partition for complete ordered snapshot ownership by one backend replica.
 - Report rows sort ascending by client components and then product components.
 - `Output.csv` is rewritten after every accepted aggregate update through same-volume temporary file and atomic replacement.
@@ -83,7 +83,7 @@ Expose same sorted report as JSON and downloadable CSV. Provide Angular summary 
 - CSV headers are exactly `Client_Information,Product_Information,Total_Transaction_Amount`.
 - JSON and CSV use same report state and canonical signed base-10 integer amounts without leading zeroes.
 - Angular uses standalone application conventions and `HttpClient`, polls JSON every five seconds, renders summary table with refresh/error state, and downloads CSV through REST endpoint.
-- Kubernetes deploys one backend replica with persistent volume mounted at `/data`, plus frontend deployment and service. Kafka cluster is external.
+- Kubernetes deploys Kafka (KRaft single broker), one backend replica with persistent volume mounted at `/data`, plus frontend deployment and service. Docker Compose deploys the same three services locally. Bootstrap servers remain configurable.
 - Spring Boot health endpoints provide Kubernetes liveness and readiness signals.
 - Checked-in sample report is informational acceptance evidence and is not runtime output.
 
@@ -96,13 +96,13 @@ Expose same sorted report as JSON and downloadable CSV. Provide Angular summary 
 - Report tests cover canonical integer rendering, deterministic ordering, exact headers, escaping, and atomic replacement behavior.
 - Spring MVC tests cover JSON shape, CSV media type, attachment filename, and agreement between representations.
 - Angular tests cover five-second polling behavior, row rendering, visible error/refresh state, and CSV download target.
-- Kubernetes and container verification covers backend/frontend image builds, manifest validation, probes, `/data` mount, one backend replica, and external Kafka configuration.
+- Kubernetes and container verification covers backend/frontend image builds, bundled Kafka, manifest validation, probes, `/data` mount, and one backend replica.
 - Supplied 717-record input must independently resolve to exact five-row sample. Expected fixture remains independent from production aggregation code.
 - Repository contains no prior source or test suite, so no codebase testing precedent exists to reuse.
 
 ## Out of Scope
 
-- Deploying or operating Kafka inside Kubernetes.
+- Multi-broker production Kafka HA, rack-aware assignment, or a Kafka operator (Strimzi). The bundled broker is a complete single-node deploy.
 - Multiple active backend replicas, distributed file ownership, Kubernetes leader election, or cross-partition interactive-query routing.
 - Editing, truncating, or replacing `Input.txt` after ingestion; file is append-only.
 - Historical reports, multi-day retention, date-range queries, authentication, authorization, or user management.
