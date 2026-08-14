@@ -15,6 +15,9 @@ import org.springframework.stereotype.Service;
 
 @Service
 public class FileIngestionService {
+  // ponytail: first 4 KB of consumed prefix, O(1). Misses same-size rewrite past 4 KB; hash full prefix once per poll if that matters.
+  static final int FINGERPRINT_HEAD = 4096;
+  private static final String FINGERPRINT_PREFIX = "h4:";
   private final Path input, checkpoint;
   private final FixedWidthParser parser;
   private final KafkaTemplate<String, Transaction> kafka;
@@ -64,13 +67,11 @@ public class FileIngestionService {
                   new Transaction(String.valueOf(position), record, parseFailure.getMessage(),
                       java.math.BigInteger.ZERO, position));
               offset.set(next);
-              persistCheckpoint();
               continue;
             }
             sendAndAwait(topic, tx.id(), tx);
           }
           offset.set(next);
-          persistCheckpoint();
         }
       }
       persistCheckpoint();
@@ -117,11 +118,12 @@ public class FileIngestionService {
   }
 
   private String fingerprint(long length) throws IOException {
+    if (length <= 0) return null;
     try {
       MessageDigest digest = MessageDigest.getInstance("SHA-256");
       try (var stream = Files.newInputStream(input)) {
         byte[] buffer = new byte[8192];
-        long remaining = length;
+        long remaining = Math.min(FINGERPRINT_HEAD, length);
         while (remaining > 0) {
           int read = stream.read(buffer, 0, (int) Math.min(buffer.length, remaining));
           if (read < 0) throw new IOException("input shorter than checkpoint");
@@ -129,7 +131,7 @@ public class FileIngestionService {
           remaining -= read;
         }
       }
-      return HexFormat.of().formatHex(digest.digest());
+      return FINGERPRINT_PREFIX + HexFormat.of().formatHex(digest.digest());
     } catch (java.security.NoSuchAlgorithmException impossible) {
       throw new IllegalStateException("SHA-256 unavailable", impossible);
     }
@@ -140,8 +142,10 @@ public class FileIngestionService {
       if (!Files.exists(checkpoint)) return new Checkpoint(0, null);
       String[] lines = Files.readString(checkpoint).trim().split("\\R", 2);
       long savedOffset = Long.parseLong(lines[0]);
-      return new Checkpoint(savedOffset,
-          lines.length == 2 ? lines[1].trim() : Files.exists(input) ? fingerprint(savedOffset) : null);
+      String saved = lines.length == 2 ? lines[1].trim() : "";
+      if (!saved.startsWith(FINGERPRINT_PREFIX))
+        saved = Files.exists(input) ? fingerprint(savedOffset) : null;
+      return new Checkpoint(savedOffset, saved);
     } catch (Exception ignored) {
       return new Checkpoint(0, null);
     }

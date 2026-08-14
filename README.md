@@ -33,7 +33,7 @@ System A appends Input.txt
 
 Kafka does not read the file. The backend **producer** does.
 
-1. `FileIngestionService` polls the append-only `Input.txt` (startup: existing records; afterwards: complete appended lines only). Offset + SHA-256 fingerprint live in `Input.offset`. Truncation or rewrite is a contract violation.
+1. `FileIngestionService` polls the append-only `Input.txt` (startup: existing records; afterwards: complete appended lines only). Offset plus a SHA-256 of the first 4 KB of the consumed prefix live in `Input.offset`. Truncation or rewrite of that head is a contract violation.
 2. `FixedWidthParser` builds client key, product key, and signed delta. Event id is a hash of source position plus raw bytes, so restart/redelivery does not mint a new trade.
 3. `KafkaTemplate.send(...).get()` publishes to the configured transactions topic and waits for the broker ack before advancing the checkpoint. Parse failures go to the dead-letter topic instead; ingestion continues.
 4. Topic names and bootstrap servers come from the environment (`TRANSACTION_TOPIC`, `DLQ_TOPIC`, `KAFKA_BOOTSTRAP_SERVERS`). Topics default to **one partition** so one backend replica owns a complete ordered snapshot.

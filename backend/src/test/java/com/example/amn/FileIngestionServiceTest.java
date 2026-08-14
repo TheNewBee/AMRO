@@ -124,6 +124,32 @@ class FileIngestionServiceTest {
     }
   }
 
+  @Test void appendAfterFingerprintHeadIsNotARewrite() throws Exception {
+    Path directory = Files.createTempDirectory("ingestion-append-head");
+    Path input = directory.resolve("Input.txt"), checkpoint = directory.resolve("Input.offset");
+    String record = validRecord() + "\n";
+    int copies = FileIngestionService.FINGERPRINT_HEAD / record.length() + 3;
+    Files.writeString(input, record.repeat(copies), StandardCharsets.UTF_8);
+    KafkaTemplate<String, Transaction> kafka = kafka();
+    FileIngestionService ingestion = service(input, checkpoint, new FixedWidthParser(), kafka);
+    ingestion.poll();
+    verify(kafka, times(copies)).send(eq("transactions"), anyString(), any(Transaction.class));
+    Files.writeString(input, record, StandardCharsets.UTF_8, StandardOpenOption.APPEND);
+    ingestion.poll();
+    verify(kafka, times(copies + 1)).send(eq("transactions"), anyString(), any(Transaction.class));
+  }
+
+  @Test void migratesLegacyFullPrefixFingerprint() throws Exception {
+    Path directory = Files.createTempDirectory("ingestion-migrate");
+    Path input = directory.resolve("Input.txt"), checkpoint = directory.resolve("Input.offset");
+    Files.writeString(input, validRecord() + "\n", StandardCharsets.UTF_8);
+    service(input, checkpoint, new FixedWidthParser(), kafka()).poll();
+    Files.writeString(checkpoint, savedOffset(checkpoint) + "\nold-full-prefix-hash\n");
+    KafkaTemplate<String, Transaction> kafka = kafka();
+    service(input, checkpoint, new FixedWidthParser(), kafka).poll();
+    verifyNoInteractions(kafka);
+  }
+
   static String validRecord() {
     char[] chars = " ".repeat(176).toCharArray();
     chars[0] = '3'; chars[1] = '1'; chars[2] = '5';
